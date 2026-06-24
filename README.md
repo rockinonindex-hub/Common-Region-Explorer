@@ -1,2 +1,24 @@
-# Common-Region-Explorer
-A browser based rough alignment software of multiple sequences
+# Common Region Explorer v0.1.1
+
+複数塩基配列から完全共通領域を検索し、共通領域の前後表示と参照配列ベースの多重配列アラインメントを行う、ブラウザ内完結型アプリです。
+
+## GitHub Pagesで公開する
+
+1. このZIPを展開します。
+2. **展開後に見える全ファイル**（`index.html`, `app.js`, `core.js` など）をGitHubリポジトリのルートへアップロードします。
+3. GitHubの `Settings` → `Pages` を開きます。
+4. `Deploy from a branch`、ブランチ `main`、フォルダ `/(root)` を選びます。
+5. 数分後、Pages欄に表示されるURLを開きます。
+
+リポジトリの通常画面ではREADMEが大きく表示されます。アプリはREADMEの画面ではなく、GitHub PagesのURLで開きます。
+
+## ローカルで使う
+
+GitHub Pages版では通常どおり動作します。ローカルPCでダブルクリックして使う場合は、同梱の複数ファイル版ではブラウザのWeb Worker制限に引っかかることがあります。その場合は別配布の `common-region-explorer-standalone.html` を使用してください。
+
+## v0.1.2 の修正
+
+- 多重配列アラインメントで、各配列行の左右にその配列自身の実座標を表示
+- 座標計算ではギャップ（`-`）を除外
+- 共通領域CSVを各配列・各ヒット単位の実座標出力へ変更
+- 一覧の「基準配列位置」と、各配列の実座標の違いを画面上で明示
