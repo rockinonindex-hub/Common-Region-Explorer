@@ -80,6 +80,13 @@ td.sequence-cell { max-width: 520px; font-family: "Cascadia Mono", Consolas, mon
 .context-row mark { background: #ffe39c; color: #17202a; padding: 2px 0; }
 .context-row.missing { opacity: .72; }
 .alignment-controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.alignment-search { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin: 10px 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--soft); }
+.alignment-search-field { min-width: min(390px, 100%); flex: 1 1 320px; }
+.alignment-search-field input { font-family: "Cascadia Mono", Consolas, monospace; text-transform: uppercase; }
+.alignment-search-check { min-height: 42px; }
+.alignment-search-summary { flex: 1 1 100%; font-size: .86rem; }
+.alignment-search-summary.found { color: var(--accent-dark); font-weight: 800; }
+.alignment-search-summary.not-found { color: var(--warn); font-weight: 800; }
 .alignment-viewer { border: 1px solid var(--line); border-radius: 13px; background: #101820; color: #dbe8ed; padding: 14px; overflow: auto; max-height: 680px; }
 .alignment-viewer.empty { color: var(--muted); background: var(--soft); }
 .alignment-block { margin-bottom: 22px; }
@@ -90,6 +97,10 @@ td.sequence-cell { max-width: 520px; font-family: "Cascadia Mono", Consolas, mon
 .alignment-name { color: #8cc9c5; overflow: hidden; text-overflow: ellipsis; }
 .alignment-consensus { color: #ffd27b; }
 .alignment-conservation { color: #8da3ad; }
+.alignment-sequence-text { white-space: pre; }
+.search-column-hit { background: rgba(255, 211, 105, .20); color: #fff3c4; }
+.search-reference-hit { background: #ffd45f; color: #182129; font-weight: 900; border-radius: 2px; }
+.search-reference-row .alignment-name { color: #ffd45f; }
 footer { color: var(--muted); text-align: center; padding: 10px 24px 35px; font-size: .82rem; }
 @media (max-width: 800px) {
   .hero { padding-top: 34px; }

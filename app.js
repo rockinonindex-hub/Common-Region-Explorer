@@ -5,7 +5,8 @@ const state = {
   commonResult: null,
   alignmentResult: null,
   worker: null,
-  busyTask: null
+  busyTask: null,
+  alignmentSearch: { query: '', hits: [], columns: new Set() }
 };
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +19,10 @@ const els = {
   summaryRegions: $('summaryRegions'), summaryReference: $('summaryReference'), regionTableBody: $('regionTableBody'), regionSelect: $('regionSelect'),
   contextSummary: $('contextSummary'), contextViewer: $('contextViewer'), referenceSelect: $('referenceSelect'), alignButton: $('alignButton'),
   alignmentNotice: $('alignmentNotice'), alignmentViewer: $('alignmentViewer'),
-  alignmentFastaButton: $('alignmentFastaButton'), alignmentClustalButton: $('alignmentClustalButton')
+  alignmentFastaButton: $('alignmentFastaButton'), alignmentClustalButton: $('alignmentClustalButton'),
+  alignmentSearchInput: $('alignmentSearchInput'), alignmentSearchReverse: $('alignmentSearchReverse'),
+  alignmentSearchButton: $('alignmentSearchButton'), alignmentSearchClearButton: $('alignmentSearchClearButton'),
+  alignmentSearchSummary: $('alignmentSearchSummary')
 };
 
 function escapeHtml(value) {
@@ -79,8 +83,10 @@ function refreshSequences() {
   populateReferenceSelect();
   state.commonResult = null;
   state.alignmentResult = null;
+  clearAlignmentSearch(false);
   els.alignmentFastaButton.disabled = true;
   els.alignmentClustalButton.disabled = true;
+  els.alignmentSearchButton.disabled = true;
   els.resultsPanel.hidden = true;
   els.csvButton.disabled = true;
 }
@@ -120,7 +126,7 @@ function setBusy(task, busy) {
 
 function createWorker() {
   if (state.worker) state.worker.terminate();
-  state.worker = new Worker('worker.js?v=0.1.4');
+  state.worker = new Worker('worker.js?v=0.1.5');
   state.worker.onmessage = handleWorkerMessage;
   state.worker.onerror = (event) => {
     showError(event.message || 'Web Workerでエラーが発生しました。');
@@ -142,10 +148,12 @@ function handleWorkerMessage(event) {
   }
   if (msg.type === 'alignmentResult') {
     state.alignmentResult = msg.result;
+    clearAlignmentSearch(false);
     setBusy(null, false);
     renderAlignment();
     els.alignmentFastaButton.disabled = false;
     els.alignmentClustalButton.disabled = false;
+    els.alignmentSearchButton.disabled = false;
     els.statusMessage.className = 'status';
     els.statusMessage.textContent = `${msg.result.alignedSequences.length}配列を整列しました。`;
   }
@@ -305,14 +313,125 @@ function coordinatesForBlock(prefix, start, end) {
   return { start: before + 1, end: after };
 }
 
+function findAllExact(sequence, query) {
+  const hits = [];
+  let from = 0;
+  while (from <= sequence.length - query.length) {
+    const index = sequence.indexOf(query, from);
+    if (index < 0) break;
+    hits.push(index);
+    from = index + 1;
+  }
+  return hits;
+}
+
+function referenceRowForAlignment(result) {
+  const index = Number.isInteger(result.referenceIndex) ? result.referenceIndex : 0;
+  return result.alignedSequences[index] || result.alignedSequences[0];
+}
+
+function alignmentColumnsForReferenceHits(alignedReference, hits) {
+  const columns = new Set();
+  if (!hits.length) return columns;
+  let sourcePos = 0;
+  for (let col = 0; col < alignedReference.length; col += 1) {
+    if (alignedReference[col] === '-') continue;
+    for (const hit of hits) {
+      if (sourcePos >= hit.start && sourcePos < hit.end) {
+        columns.add(col);
+        break;
+      }
+    }
+    sourcePos += 1;
+  }
+  return columns;
+}
+
+function clearAlignmentSearch(rerender = true) {
+  state.alignmentSearch = { query: '', hits: [], columns: new Set() };
+  if (els.alignmentSearchInput) els.alignmentSearchInput.value = '';
+  if (els.alignmentSearchSummary) {
+    els.alignmentSearchSummary.textContent = '';
+    els.alignmentSearchSummary.className = 'alignment-search-summary muted';
+  }
+  if (els.alignmentSearchClearButton) els.alignmentSearchClearButton.disabled = true;
+  if (rerender && state.alignmentResult) renderAlignment();
+}
+
+function searchAlignmentReference() {
+  const result = state.alignmentResult;
+  if (!result) {
+    showError('先に多重配列アラインメントを実行してください。');
+    return;
+  }
+  const query = normalizeSequence(els.alignmentSearchInput.value, els.treatUasT.checked);
+  if (!query) {
+    clearAlignmentSearch();
+    return;
+  }
+  const refRow = referenceRowForAlignment(result);
+  const reference = refRow.aligned.replace(/-/g, '');
+  const hits = findAllExact(reference, query).map((start) => ({ start, end: start + query.length, strand: '+' }));
+  if (els.alignmentSearchReverse.checked) {
+    const rc = reverseComplement(query);
+    if (rc !== query) {
+      findAllExact(reference, rc).forEach((start) => hits.push({ start, end: start + rc.length, strand: '-' }));
+    }
+  }
+  hits.sort((a, b) => a.start - b.start || a.strand.localeCompare(b.strand));
+  state.alignmentSearch = {
+    query,
+    hits,
+    columns: alignmentColumnsForReferenceHits(refRow.aligned, hits)
+  };
+  els.alignmentSearchClearButton.disabled = false;
+  if (hits.length) {
+    const positions = hits.map((hit) => `${hit.start + 1}–${hit.end} (${hit.strand})`).join(', ');
+    els.alignmentSearchSummary.textContent = `${result.referenceName || refRow.name}：${hits.length}件検出 · ${positions}`;
+    els.alignmentSearchSummary.className = 'alignment-search-summary found';
+  } else {
+    els.alignmentSearchSummary.textContent = `${result.referenceName || refRow.name}には完全一致する配列がありません。`;
+    els.alignmentSearchSummary.className = 'alignment-search-summary not-found';
+  }
+  renderAlignment();
+}
+
+function renderHighlightedAlignmentSlice(sequence, start, end, highlightedColumns, strong = false) {
+  const parts = [];
+  let runStart = start;
+  let runHighlighted = highlightedColumns.has(start);
+  const flush = (to) => {
+    const text = escapeHtml(sequence.slice(runStart, to));
+    if (!text) return;
+    if (runHighlighted) {
+      parts.push(`<span class="${strong ? 'search-reference-hit' : 'search-column-hit'}">${text}</span>`);
+    } else {
+      parts.push(text);
+    }
+  };
+  for (let col = start + 1; col < end; col += 1) {
+    const current = highlightedColumns.has(col);
+    if (current !== runHighlighted) {
+      flush(col);
+      runStart = col;
+      runHighlighted = current;
+    }
+  }
+  flush(end);
+  return parts.join('');
+}
+
 function renderAlignment() {
   const result = state.alignmentResult;
   const hasAlignment = Boolean(result && Array.isArray(result.alignedSequences) && result.alignedSequences.length);
   els.alignmentFastaButton.disabled = !hasAlignment;
   els.alignmentClustalButton.disabled = !hasAlignment;
+  els.alignmentSearchButton.disabled = !hasAlignment;
   if (!hasAlignment) return;
   const blockWidth = 80;
-  const rows = result.alignedSequences.map((row) => ({ ...row, prefix: makeUngappedPrefix(row.aligned) }));
+  const referenceIndex = Number.isInteger(result.referenceIndex) ? result.referenceIndex : 0;
+  const highlightedColumns = state.alignmentSearch.columns || new Set();
+  const rows = result.alignedSequences.map((row, index) => ({ ...row, index, prefix: makeUngappedPrefix(row.aligned) }));
   const consensusPrefix = makeUngappedPrefix(result.consensus);
   let html = '';
   for (let start = 0; start < result.length; start += blockWidth) {
@@ -321,11 +440,15 @@ function renderAlignment() {
     html += `<div class="alignment-line alignment-ruler"><span class="alignment-name">Alignment columns</span><span class="alignment-pos">${start + 1}</span><span>${'·'.repeat(end - start)}</span><span class="alignment-pos">${end}</span></div>`;
     for (const row of rows) {
       const coords = coordinatesForBlock(row.prefix, start, end);
-      html += `<div class="alignment-line"><span class="alignment-name" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</span><span class="alignment-pos">${coords.start}</span><span>${escapeHtml(row.aligned.slice(start, end))}</span><span class="alignment-pos">${coords.end}</span></div>`;
+      const isReference = row.index === referenceIndex;
+      const sequenceHtml = renderHighlightedAlignmentSlice(row.aligned, start, end, highlightedColumns, isReference);
+      html += `<div class="alignment-line${isReference ? ' search-reference-row' : ''}"><span class="alignment-name" title="${escapeHtml(row.name)}${isReference ? ' (reference)' : ''}">${escapeHtml(row.name)}${isReference ? ' ◀' : ''}</span><span class="alignment-pos">${coords.start}</span><span class="alignment-sequence-text">${sequenceHtml}</span><span class="alignment-pos">${coords.end}</span></div>`;
     }
     const consensusCoords = coordinatesForBlock(consensusPrefix, start, end);
-    html += `<div class="alignment-line alignment-consensus"><span>Consensus</span><span class="alignment-pos">${consensusCoords.start}</span><span>${escapeHtml(result.consensus.slice(start, end))}</span><span class="alignment-pos">${consensusCoords.end}</span></div>`;
-    html += `<div class="alignment-line alignment-conservation"><span>Conservation</span><span class="alignment-pos"></span><span>${escapeHtml(result.conservation.slice(start, end))}</span><span class="alignment-pos"></span></div>`;
+    const consensusHtml = renderHighlightedAlignmentSlice(result.consensus, start, end, highlightedColumns, false);
+    const conservationHtml = renderHighlightedAlignmentSlice(result.conservation, start, end, highlightedColumns, false);
+    html += `<div class="alignment-line alignment-consensus"><span>Consensus</span><span class="alignment-pos">${consensusCoords.start}</span><span class="alignment-sequence-text">${consensusHtml}</span><span class="alignment-pos">${consensusCoords.end}</span></div>`;
+    html += `<div class="alignment-line alignment-conservation"><span>Conservation</span><span class="alignment-pos"></span><span class="alignment-sequence-text">${conservationHtml}</span><span class="alignment-pos"></span></div>`;
     html += `</div>`;
   }
   els.alignmentViewer.className = 'alignment-viewer';
@@ -394,7 +517,7 @@ function downloadAlignmentFasta() {
     lines.push(`>${row.name} aligned_length=${result.length}`);
     for (let i = 0; i < row.aligned.length; i += width) lines.push(row.aligned.slice(i, i + width));
   });
-  const ref = result.alignedSequences[0]?.name || 'alignment';
+  const ref = referenceRowForAlignment(result)?.name || 'alignment';
   downloadTextFile(`${safeFilePart(ref)}_aligned.fasta`, lines.join('\n') + '\n', 'text/plain;charset=utf-8');
 }
 
@@ -403,7 +526,7 @@ function downloadAlignmentClustal() {
   if (!result) return;
   const width = 60;
   const nameWidth = Math.min(30, Math.max(12, ...result.alignedSequences.map((row) => row.name.length)));
-  const lines = ['CLUSTAL W multiple sequence alignment generated by Common Region Explorer v0.1.4', ''];
+  const lines = ['CLUSTAL W multiple sequence alignment generated by Common Region Explorer v0.1.5', ''];
   for (let start = 0; start < result.length; start += width) {
     const end = Math.min(result.length, start + width);
     result.alignedSequences.forEach((row) => {
@@ -413,7 +536,7 @@ function downloadAlignmentClustal() {
     lines.push(`${''.padEnd(nameWidth + 2)}${result.conservation.slice(start, end)}`);
     lines.push('');
   }
-  const ref = result.alignedSequences[0]?.name || 'alignment';
+  const ref = referenceRowForAlignment(result)?.name || 'alignment';
   downloadTextFile(`${safeFilePart(ref)}_alignment.aln`, lines.join('\n') + '\n', 'text/plain;charset=utf-8');
 }
 
@@ -444,6 +567,14 @@ els.analyzeButton.addEventListener('click', analyze);
 els.alignButton.addEventListener('click', runAlignment);
 els.alignmentFastaButton.addEventListener('click', downloadAlignmentFasta);
 els.alignmentClustalButton.addEventListener('click', downloadAlignmentClustal);
+els.alignmentSearchButton.addEventListener('click', searchAlignmentReference);
+els.alignmentSearchClearButton.addEventListener('click', () => clearAlignmentSearch());
+els.alignmentSearchInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    searchAlignmentReference();
+  }
+});
 els.stopButton.addEventListener('click', () => { if (state.worker) state.worker.terminate(); setBusy(null, false); els.statusMessage.textContent = '処理を中止しました。'; });
 els.csvButton.addEventListener('click', downloadCsv);
 els.regionSelect.addEventListener('change', renderContext);

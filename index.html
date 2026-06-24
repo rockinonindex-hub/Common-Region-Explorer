@@ -108,12 +108,19 @@
           </div>
         </div>
         <p id="alignmentNotice" class="notice"></p>
+        <div class="alignment-search">
+          <label class="field alignment-search-field"><span>参照配列内を検索</span><input id="alignmentSearchInput" type="text" placeholder="例: ATGCTGACCTGA" autocomplete="off" spellcheck="false"></label>
+          <label class="check alignment-search-check"><input id="alignmentSearchReverse" type="checkbox"><span>逆相補鎖も検索</span></label>
+          <button id="alignmentSearchButton" class="ghost" disabled>検索してハイライト</button>
+          <button id="alignmentSearchClearButton" class="ghost" disabled>解除</button>
+          <span id="alignmentSearchSummary" class="alignment-search-summary muted"></span>
+        </div>
         <div id="alignmentViewer" class="alignment-viewer empty">まだアラインメントを実行していません。</div>
       </section>
     </section>
   </main>
 
-  <footer>Common Region Explorer v0.1.4 · Static browser app for GitHub Pages</footer>
-  <script src="app.js?v=0.1.4"></script>
+  <footer>Common Region Explorer v0.1.5 · Static browser app for GitHub Pages</footer>
+  <script src="app.js?v=0.1.5"></script>
 </body>
 </html>

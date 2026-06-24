@@ -1,5 +1,5 @@
 'use strict';
-importScripts('core.js?v=0.1.4');
+importScripts('core.js?v=0.1.5');
 
 self.onmessage = (event) => {
   const { type, payload } = event.data || {};
